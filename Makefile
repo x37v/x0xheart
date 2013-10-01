@@ -9,7 +9,7 @@
 #         LUFA Project Makefile.
 # --------------------------------------
 
-MCU          = at90usb646
+MCU          = atmega32u4
 ARCH         = AVR8
 BOARD        = NONE
 F_CPU        = 16000000
@@ -17,6 +17,7 @@ F_USB        = $(F_CPU)
 OPTIMIZATION = s
 TARGET       = MIDI
 SRC          = main.c \
+							 spi.c \
                xnormidi/midi.c \
                xnormidi/midi_device.c \
                xnormidi/bytequeue/bytequeue.c \
