@@ -1,0 +1,3 @@
+[submodule "xnormidi"]
+	path = xnormidi
+	url = git@github.com:x37v/xnormidi.git
