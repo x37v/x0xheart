@@ -12,6 +12,10 @@ void note_off_callback(MidiDevice * device, uint8_t chan, uint8_t note, uint8_t 
 void update_dac(uint8_t addr, uint16_t value);
 void dac_sel(bool sel, uint8_t dac);
 
+#define setp(port, pin, on) \
+  if (on) { port |= _BV(pin); } \
+  else { port &= ~_BV(pin); }
+
 #define DAC0_DDR DDRB
 #define DAC0_ENABLE_PORT PORTB
 #define DAC0_ENABLE_PIN PINB0
@@ -21,13 +25,16 @@ void dac_sel(bool sel, uint8_t dac);
 #define DAC1_ENABLE_PIN PORTD0
 
 int main(void) {
-  int i = 0;
   clock_prescale_set(clock_div_4);
   MidiDevice midi_device;
 
   //spi enables as outputs
   DAC0_DDR |= _BV(DAC0_ENABLE_PIN);
   DAC1_DDR |= _BV(DAC1_ENABLE_PIN);
+
+  //digital out, d3 [oops], c6
+  DDRC |= _BV(PINC6);
+  DDRD |= _BV(PIND3);
 
   dac_sel(false, 0);
   dac_sel(false, 1);
@@ -66,22 +73,43 @@ void update_dac(uint8_t addr, uint16_t value) {
   dac_sel(false, dac);
 }
 
+void update_digital(uint8_t addr, bool on) {
+  switch (addr) {
+    case 0:
+      setp(PORTD, PD3, on);
+      break;
+    case 1:
+      setp(PORTC, PC6, on);
+      break;
+    default:
+      break;
+  }
+}
+
 void dac_sel(bool sel, uint8_t dac) {
   if (dac == 0) {
-    if (sel)
-      DAC0_ENABLE_PORT &= ~_BV(DAC0_ENABLE_PIN);
-    else
-      DAC0_ENABLE_PORT |= _BV(DAC0_ENABLE_PIN);
+    setp(DAC0_ENABLE_PORT, DAC0_ENABLE_PIN, !sel);
   } else {
-    if (sel)
-      DAC1_ENABLE_PORT &= ~_BV(DAC1_ENABLE_PIN);
-    else
-      DAC1_ENABLE_PORT |= _BV(DAC1_ENABLE_PIN);
+    setp(DAC1_ENABLE_PORT, DAC1_ENABLE_PIN, !sel);
   }
 }
 
 void note_callback(bool on, uint8_t chan, uint8_t note, uint8_t vel) {
-  //XXX implement
+  if (chan < 8) {
+    if (note > 120)
+      return; //cannot get there
+
+    uint16_t v = note;
+    v = (v * 102) / 12;
+    update_digital(chan, on);
+    update_dac(chan, v);
+  }
+}
+
+void nrpn_callback(uint8_t chan, uint16_t address, uint16_t value) {
+  if (chan != 15 || address > 7)
+    return;
+  update_dac(address, value >> 4);
 }
 
 void cc_callback(MidiDevice * device, uint8_t chan, uint8_t num, uint8_t val) {
@@ -89,6 +117,46 @@ void cc_callback(MidiDevice * device, uint8_t chan, uint8_t num, uint8_t val) {
     if (num < 8) {
       update_dac(num, ((uint16_t)val) << 3); //7 bit, so.. 
       //midi_send_cc(device, chan + 1, val, num);
+    }
+  } else if (chan == 15) { 
+    static uint8_t nrpn_state = 0;
+    static uint16_t nrpn_address = 0;
+    static uint16_t nrpn_value = 0;
+
+    //NRPN
+    switch (num) {
+      case 99:
+        //ADDR MSB
+        nrpn_address = (uint16_t)val << 7;
+        nrpn_state = 1;
+        break;
+      case 98:
+        //ADDR LSB
+        if (nrpn_state != 1)
+          return;
+        nrpn_address |= val;
+        nrpn_state++;
+        break;
+      case 6:
+        //VAL MSB
+        if (nrpn_state != 2)
+          return;
+        nrpn_state++;
+        nrpn_value = (uint16_t)val << 7;
+        //XXX wait for LSB or just go for it?
+        nrpn_callback(chan, nrpn_address, nrpn_value);
+        break;
+      case 38:
+        //VAL LSB
+        if (nrpn_state != 3)
+          return;
+        nrpn_state++;
+        nrpn_value |= val;
+        nrpn_callback(chan, nrpn_address, nrpn_value);
+        break;
+      default:
+        nrpn_state = 0;
+        break;
     }
   }
 }
