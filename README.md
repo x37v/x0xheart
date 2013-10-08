@@ -6,6 +6,7 @@ So far its just the normal octobmod but controlled via MIDI
 mapping:
 CC on channel 1
 	num 0..7 value << 3
+  num 8..15 digital outs [0..7] off if zero, on otherwise
 NRPN channel 16
 	num 0..7 value[14bit] >> 4
 Note channel 1-8

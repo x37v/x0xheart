@@ -117,6 +117,8 @@ void cc_callback(MidiDevice * device, uint8_t chan, uint8_t num, uint8_t val) {
     if (num < 8) {
       update_dac(num, ((uint16_t)val) << 3); //7 bit, so.. 
       //midi_send_cc(device, chan + 1, val, num);
+    } else if (num < 16) {
+      update_digital(num - 8, val > 0);
     }
   } else if (chan == 15) { 
     static uint8_t nrpn_state = 0;
