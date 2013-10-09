@@ -4,13 +4,22 @@
 #include <avr/power.h>
 #include <util/delay.h>
 
+//SYSEX_BEGIN, SYSEX_EDUMANUFID, xnormidibootloader, SYSEX_END
+const static uint8_t reboot_sequence[] = {
+  SYSEX_BEGIN, SYSEX_EDUMANUFID,
+  'x', 'n', 'o', 'r', 'm', 'i', 'd', 'i', 'b', 'o', 'o', 't', 'l', 'o', 'a', 'd', 'e', 'r',
+  SYSEX_END
+};
+
 //forward declarations of callbacks
 void cc_callback(MidiDevice * device, uint8_t chan, uint8_t num, uint8_t val);
 void note_on_callback(MidiDevice * device, uint8_t chan, uint8_t note, uint8_t vel);
 void note_off_callback(MidiDevice * device, uint8_t chan, uint8_t note, uint8_t vel);
+void sysex_callback(MidiDevice * device, uint16_t count, uint8_t byte0, uint8_t byte1, uint8_t byte2);
 
 void update_dac(uint8_t addr, uint16_t value);
 void dac_sel(bool sel, uint8_t dac);
+void jump_to_bootloader(void);
 
 #define setp(port, pin, on) \
   if (on) { port |= _BV(pin); } \
@@ -47,6 +56,7 @@ int main(void) {
   midi_register_cc_callback(&midi_device, cc_callback);
   midi_register_noteon_callback(&midi_device, note_on_callback);
   midi_register_noteoff_callback(&midi_device, note_off_callback);
+  midi_register_sysex_callback(&midi_device, sysex_callback);
 
   while(1){
     //processes input from the midi device
@@ -55,6 +65,10 @@ int main(void) {
   }
 
   return 0; //never happens
+}
+
+void jump_to_bootloader(void) {
+  asm volatile("jmp 0x7E00");  // Teensy 2.0
 }
 
 void update_dac(uint8_t addr, uint16_t value) {
@@ -169,5 +183,35 @@ void note_on_callback(MidiDevice * device, uint8_t chan, uint8_t note, uint8_t v
 
 void note_off_callback(MidiDevice * device, uint8_t chan, uint8_t note, uint8_t vel) {
   note_callback(false, chan, note, vel);
+}
+
+void sysex_callback(MidiDevice * device, uint16_t count, uint8_t byte0, uint8_t byte1, uint8_t byte2) {
+  bool valid = false;
+  if (count >= sizeof(reboot_sequence)) {
+    valid = false;
+    return;
+  }
+
+  //kick it off valid
+  if (count == 3)
+    valid = true;
+
+  if (valid) {
+    uint8_t bytes[3];
+    uint8_t start_index = 3 * ((count - 1) / 3);
+    uint8_t i;
+    bytes[0] = byte0;
+    bytes[1] = byte1;
+    bytes[2] = byte2;
+    for (i = start_index; i < count; i++) {
+      if (bytes[i % 3] != reboot_sequence[i]) {
+        valid = false;
+        break;
+      }
+    }
+
+    if (valid && count == sizeof(reboot_sequence))
+      jump_to_bootloader();
+  }
 }
 
