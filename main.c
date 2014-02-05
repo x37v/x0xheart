@@ -129,7 +129,10 @@ void nrpn_callback(uint8_t chan, uint16_t address, uint16_t value) {
 void cc_callback(MidiDevice * device, uint8_t chan, uint8_t num, uint8_t val) {
   if (chan == 0) {
     if (num < 8) {
-      update_dac(num, ((uint16_t)val) << 3); //7 bit, so.. 
+      uint16_t largeval = ((uint16_t)val) << 3;
+      if (val & 0x1)
+        largeval |= 0x7;
+      update_dac(num, largeval); //7 bit, so.. 
       //midi_send_cc(device, chan + 1, val, num);
     } else if (num < 16) {
       update_digital(num - 8, val > 0);
