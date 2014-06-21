@@ -123,7 +123,7 @@ void update_dac(uint8_t addr, uint16_t value) {
   dac_sel(true, dac);
   send_spi(out[0]);
   send_spi(out[1]);
-  _delay_us(10);
+  _delay_us(1);
   dac_sel(false, dac);
 }
 
