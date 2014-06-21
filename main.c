@@ -25,13 +25,31 @@ void jump_to_bootloader(void);
   if (on) { port |= _BV(pin); } \
   else { port &= ~_BV(pin); }
 
+
+/*
+ * teensy 2.0
+
+ SPI
+   B0 -> SS   [DAC CS]
+   B1 -> SCLK [DAC]
+   B2 -> MOSI [DAC]
+   B3 -> MISO [UNUSED]
+   //TIE LDAC low to transfer on rising edge of CS
+ MIDI
+   D2 -> RXD1
+   D3 -> TXD1
+
+*/
+
 #define DAC0_DDR DDRB
 #define DAC0_ENABLE_PORT PORTB
 #define DAC0_ENABLE_PIN PINB0
 
+/*
 #define DAC1_DDR DDRD
 #define DAC1_ENABLE_PORT PORTD
 #define DAC1_ENABLE_PIN PORTD0
+*/
 
 int main(void) {
   clock_prescale_set(clock_div_4);
@@ -39,21 +57,21 @@ int main(void) {
 
   //spi enables as outputs
   DAC0_DDR |= _BV(DAC0_ENABLE_PIN);
-  DAC1_DDR |= _BV(DAC1_ENABLE_PIN);
 
+  /*
   //digital out, d3 [oops], c6
   DDRC |= _BV(PINC6);
   DDRD |= _BV(PIND3);
+  */
 
   dac_sel(false, 0);
-  dac_sel(false, 1);
 
   //setup the device
   midi_usb_init(&midi_device);
   setup_spi(SPI_MODE_0, SPI_MSB, SPI_NO_INTERRUPT, SPI_MSTR_CLK2);
 
   //register callbacks
-  midi_register_cc_callback(&midi_device, cc_callback);
+  //XXX midi_register_cc_callback(&midi_device, cc_callback);
   midi_register_noteon_callback(&midi_device, note_on_callback);
   midi_register_noteoff_callback(&midi_device, note_off_callback);
   midi_register_sysex_callback(&midi_device, sysex_callback);
@@ -71,15 +89,37 @@ void jump_to_bootloader(void) {
   asm volatile("jmp 0x7E00");  // Teensy 2.0
 }
 
+/*
+bit 15 A/B: DAC A or DAC B Select bit
+  1 = Write to DAC B
+  0 = Write to DAC A
+bit 14 BUF: V REF Input Buffer Control bit
+  1 =  Buffered
+  0 =  Unbuffered
+bit 13 GA: Output Gain Select bit
+  1 = 1x (V OUT = V REF * D/4096)
+  0 = 2x (V OUT = 2 * V REF * D/4096)
+bit 12 SHDN: Output Power Down Control bit
+  1 = Output Power Down Control bit
+  0 = Output buffer disabled, Output is high impedance
+bit 11-0 DATA
+*/
+
+//dac a, buffered, normal gain, out buffer enabled
+//0b0110 -> 0x60
+#define DAC_CONTROL_NIBBLE 0x60
+
 void update_dac(uint8_t addr, uint16_t value) {
   uint8_t out[2];
-  out[0] = value >> 6;
-  out[1] = value << 2;
 
-  out[0] |= addr << 6; //address
-  out[0] |= 0x3 << 4; //control [0b11]
+  //cut up value
+  out[0] = 0x0F & (value >> 8);
+  out[1] = (0xFF & value);
 
-  uint8_t dac = addr >> 2;
+  //add control data
+  out[0] |= DAC_CONTROL_NIBBLE;
+
+  const uint8_t dac = 0;
   dac_sel(true, dac);
   send_spi(out[0]);
   send_spi(out[1]);
@@ -101,11 +141,7 @@ void update_digital(uint8_t addr, bool on) {
 }
 
 void dac_sel(bool sel, uint8_t dac) {
-  if (dac == 0) {
-    setp(DAC0_ENABLE_PORT, DAC0_ENABLE_PIN, !sel);
-  } else {
-    setp(DAC1_ENABLE_PORT, DAC1_ENABLE_PIN, !sel);
-  }
+  setp(DAC0_ENABLE_PORT, DAC0_ENABLE_PIN, !sel);
 }
 
 void note_callback(bool on, uint8_t chan, uint8_t note, uint8_t vel) {
